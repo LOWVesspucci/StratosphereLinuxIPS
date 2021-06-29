@@ -72,6 +72,15 @@ class Module(Module, multiprocessing.Process):
         vd_text = str(int(verbose) * 10 + int(debug))
         self.outputqueue.put(vd_text + '|' + self.name + '|[' + self.name + '] ' + str(text))
 
+    def get_ip_family(self, ip):
+        """
+        returns the family of the IP, AF_INET or AF_INET6
+        :param ip: str
+        """
+        if ':' in ip:
+            return socket.AF_INET6
+        return socket.AF_INET
+
     def run(self):
         # Main loop function
         while True:
@@ -88,17 +97,18 @@ class Module(Module, multiprocessing.Process):
                     ip = message['data']
                     data = {}
                     try:
-                        reverse_dns = socket.getnameinfo((ip, 0), 0)[0]
+                        # works with both ipv4 and ipv6
+                        reverse_dns = socket.gethostbyaddr(ip)[0]
                         # if there's no reverse dns record for this ip, reverse_dns will be an ip.
                         try:
-                            # there's no reverse dns for this ip, don't store
-                            socket.inet_aton(reverse_dns)
+                            # reverse_dns is an ip and there's no reverse dns, don't store
+                            socket.inet_pton(self.get_ip_family(reverse_dns), reverse_dns)
                             continue
                         except socket.error:
                             # all good, store it
                             data['reverse_dns'] = reverse_dns
-                    except socket.gaierror:
-                        # not an ip, can't get the reverse dns record of it
+                    except (socket.gaierror, socket.herror, OSError):
+                        # not an ip or multicast, can't get the reverse dns record of it
                         continue
                     # Store in the db
                     __database__.setInfoForIPs(ip, data)
